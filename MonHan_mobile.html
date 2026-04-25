@@ -1,0 +1,370 @@
+﻿<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>物理モンキーハンティング（スマホ対応版）</title>
+  <style>
+    body {
+      background: #222;
+      color: #fff;
+      font-family: sans-serif;
+      text-align: center;
+      touch-action: none; /* スマホでのスクロール誤動作を防ぐ */
+    }
+    #gameContainer {
+      margin: 20px auto;
+      width: 900px;
+      max-width: 95vw;
+    }
+    canvas {
+      background: #111;
+      border: 2px solid #fff;
+      display: block;
+      margin: 0 auto;
+      touch-action: none; /* キャンバス上のタッチ操作を有効化 */
+    }
+    #controls {
+      margin-top: 10px;
+      font-size: 14px;
+    }
+    input {
+      width: 70px;
+      text-align: right;
+    }
+    button {
+      margin-left: 10px;
+      padding: 4px 10px;
+    }
+    #message {
+      margin-top: 8px;
+      min-height: 1.5em;
+    }
+  </style>
+</head>
+<body>
+  <h1>物理モンキーハンティング（スマホ対応版）</h1>
+  <div id="gameContainer">
+    <canvas id="canvas" width="800" height="450"></canvas>
+
+    <div id="controls">
+      発射速度 v? [m/s]:
+      <input type="number" id="v0Input" value="25" step="1">
+      L [m]:
+      <input type="number" id="LInput" value="30" step="1">
+      H [m]:
+      <input type="number" id="HInput" value="15" step="1">
+      g [m/s2]:
+      <input type="number" id="gInput" value="9.8" step="0.1">
+      <button id="aimBtn">照準</button>
+      <button id="fireBtn">発射</button>
+    </div>
+
+    <div id="message"></div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    const v0Input = document.getElementById('v0Input');
+    const LInput = document.getElementById('LInput');
+    const HInput = document.getElementById('HInput');
+    const gInput = document.getElementById('gInput');
+    const aimBtn = document.getElementById('aimBtn');
+    const fireBtn = document.getElementById('fireBtn');
+    const messageEl = document.getElementById('message');
+
+    const WIDTH = canvas.width;
+    const HEIGHT = canvas.height;
+
+    const SCALE = 10;
+
+    const hunter = { x: 0, y: 0 };
+
+    let monkeyInit = { x: 30, y: 15 };
+
+    let v0 = 25;
+    let g = 9.8;
+    let angle = 0;
+
+    let t = 0;
+    let dt = 0.02;
+    let firing = false;
+    let bullet = { x: 0, y: 0 };
+    let monkey = { x: 0, y: 0 };
+    let hit = false;
+    let miss = false;
+
+    let trajectory = [];
+
+    let draggingMonkey = false;
+    let dragOffsetX = 0;
+    let dragOffsetY = 0;
+
+    function resetState() {
+      t = 0;
+      firing = false;
+      hit = false;
+      miss = false;
+      bullet.x = hunter.x;
+      bullet.y = hunter.y;
+      monkey.x = monkeyInit.x;
+      monkey.y = monkeyInit.y;
+      trajectory = [];
+      messageEl.textContent = '';
+    }
+
+    function readInputs() {
+      v0 = parseFloat(v0Input.value) || 25;
+      monkeyInit.x = parseFloat(LInput.value) || 30;
+      monkeyInit.y = parseFloat(HInput.value) || 15;
+      g = parseFloat(gInput.value) || 9.8;
+    }
+
+    function aimAtMonkey() {
+      readInputs();
+      angle = Math.atan2(monkeyInit.y - hunter.y, monkeyInit.x - hunter.x);
+      const deg = angle * 180 / Math.PI;
+      messageEl.textContent = `照準角度 θ ? ${deg.toFixed(1)}°`;
+      resetState();
+    }
+
+    function fire() {
+      readInputs();
+      resetState();
+      firing = true;
+    }
+
+    aimBtn.addEventListener('click', aimAtMonkey);
+    fireBtn.addEventListener('click', fire);
+
+    function toScreenX(x) { return x * SCALE + 50; }
+    function toScreenY(y) { return HEIGHT - (y * SCALE + 50); }
+
+    function getMousePos(evt) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: evt.clientX - rect.left,
+        y: evt.clientY - rect.top
+      };
+    }
+
+    function getTouchPos(touch) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: touch.clientX - rect.left,
+        y: touch.clientY - rect.top
+      };
+    }
+
+    function startDrag(x, y) {
+      const mx = toScreenX(monkeyInit.x);
+      const my = toScreenY(monkeyInit.y);
+      const dx = x - mx;
+      const dy = y - my;
+      const r = 14;
+
+      if (dx * dx + dy * dy <= r * r) {
+        draggingMonkey = true;
+        dragOffsetX = dx;
+        dragOffsetY = dy;
+      }
+    }
+
+    function moveDrag(x, y) {
+      if (!draggingMonkey) return;
+
+      const newX = (x - dragOffsetX - 50) / SCALE;
+      const newY = (HEIGHT - (y - dragOffsetY) - 50) / SCALE;
+
+      monkeyInit.x = Math.max(0, newX);
+      monkeyInit.y = Math.max(0, newY);
+
+     // ★ UI の数値欄を更新
+     LInput.value = monkeyInit.x.toFixed(2);
+     HInput.value = monkeyInit.y.toFixed(2);
+
+     angle = Math.atan2(monkeyInit.y - hunter.y, monkeyInit.x - hunter.x);
+
+     monkey.x = monkeyInit.x;
+     monkey.y = monkeyInit.y;
+
+
+      angle = Math.atan2(monkeyInit.y - hunter.y, monkeyInit.x - hunter.x);
+
+      monkey.x = monkeyInit.x;
+      monkey.y = monkeyInit.y;
+    }
+
+    canvas.addEventListener('mousedown', e => {
+      const pos = getMousePos(e);
+      startDrag(pos.x, pos.y);
+    });
+
+    canvas.addEventListener('mousemove', e => {
+      const pos = getMousePos(e);
+      moveDrag(pos.x, pos.y);
+    });
+
+    canvas.addEventListener('mouseup', () => draggingMonkey = false);
+
+    canvas.addEventListener('touchstart', e => {
+      const pos = getTouchPos(e.touches[0]);
+      startDrag(pos.x, pos.y);
+    });
+
+    canvas.addEventListener('touchmove', e => {
+      e.preventDefault();
+      const pos = getTouchPos(e.touches[0]);
+      moveDrag(pos.x, pos.y);
+    });
+
+    canvas.addEventListener('touchend', () => draggingMonkey = false);
+
+    function update() {
+      if (firing && !hit && !miss) {
+        t += dt;
+
+        const vx = v0 * Math.cos(angle);
+        const vy = v0 * Math.sin(angle);
+
+        bullet.x = hunter.x + vx * t;
+        bullet.y = hunter.y + vy * t - 0.5 * g * t * t;
+
+        monkey.x = monkeyInit.x;
+        monkey.y = monkeyInit.y - 0.5 * g * t * t;
+
+        trajectory.push({ x: bullet.x, y: bullet.y });
+
+        const dx = bullet.x - monkey.x;
+        const dy = bullet.y - monkey.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < 0.5) {
+          hit = true;
+          firing = false;
+          messageEl.textContent = `命中！ t ? ${t.toFixed(2)} s`;
+        }
+
+        if (bullet.x * SCALE > WIDTH || bullet.y < -10) {
+          miss = true;
+          firing = false;
+          if (!hit) messageEl.textContent = 'ミス：速度不足または角度不適切';
+        }
+
+        if (monkey.y < 0) {
+          monkey.y = 0;
+          if (!hit && !miss) {
+            miss = true;
+            firing = false;
+            messageEl.textContent = 'サルが地面に落下';
+          }
+        }
+      }
+    }
+
+    function drawAxes() {
+      ctx.strokeStyle = '#555';
+      ctx.lineWidth = 1;
+      const groundY = toScreenY(0);
+      ctx.beginPath();
+      ctx.moveTo(0, groundY);
+      ctx.lineTo(WIDTH, groundY);
+      ctx.stroke();
+    }
+
+    function drawAimLine() {
+      const hx = toScreenX(hunter.x);
+      const hy = toScreenY(hunter.y);
+      const mx0 = toScreenX(monkeyInit.x);
+      const my0 = toScreenY(monkeyInit.y);
+
+      ctx.strokeStyle = 'rgba(0,255,0,0.7)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(hx, hy);
+      ctx.lineTo(mx0, my0);
+      ctx.stroke();
+    }
+
+    function drawHunter() {
+      const hx = toScreenX(hunter.x);
+      const hy = toScreenY(hunter.y);
+
+      ctx.fillStyle = '#00bfff';
+      ctx.beginPath();
+      ctx.arc(hx, hy, 8, 0, Math.PI * 2);
+      ctx.fill();
+
+      const len = 30;
+      const sx = hx + len * Math.cos(-angle);
+      const sy = hy + len * Math.sin(-angle);
+
+      ctx.strokeStyle = '#00bfff';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(hx, hy);
+      ctx.lineTo(sx, sy);
+      ctx.stroke();
+    }
+
+    function drawMonkey() {
+      const mx = toScreenX(monkey.x);
+      const my = toScreenY(monkey.y);
+
+      ctx.fillStyle = '#8B4513';
+      ctx.beginPath();
+      ctx.arc(mx, my, 10, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#D2B48C';
+      ctx.beginPath();
+      ctx.arc(mx, my - 4, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function drawTrajectory() {
+      if (trajectory.length < 2) return;
+
+      ctx.strokeStyle = 'orange';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(toScreenX(trajectory[0].x), toScreenY(trajectory[0].y));
+
+      for (let i = 1; i < trajectory.length; i++) {
+        ctx.lineTo(toScreenX(trajectory[i].x), toScreenY(trajectory[i].y));
+      }
+      ctx.stroke();
+    }
+
+    function drawBullet() {
+      const bx = toScreenX(bullet.x);
+      const by = toScreenY(bullet.y);
+
+      ctx.fillStyle = '#ff0000';
+      ctx.beginPath();
+      ctx.arc(bx, by, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function loop() {
+      update();
+
+      ctx.clearRect(0, 0, WIDTH, HEIGHT);
+      drawAxes();
+      drawAimLine();
+      drawHunter();
+      drawMonkey();
+      drawTrajectory();
+
+      if (firing || hit || miss) drawBullet();
+
+      requestAnimationFrame(loop);
+    }
+
+    aimAtMonkey();
+    resetState();
+    loop();
+  </script>
+</body>
+</html>
